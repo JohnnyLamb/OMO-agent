@@ -1,4 +1,6 @@
 import * as os from "os";
+import * as fs from "fs";
+import * as path from "path";
 import type { Tool } from "./types.js";
 
 const CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
@@ -11,6 +13,69 @@ export interface AgentConfig {
     model?: string;
     tools?: Tool[];
     cwd?: string;
+}
+
+// Format date as YYYY-MM-DD
+function formatDate(d: Date): string {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function ensureMemoryFiles(cwd: string) {
+    const memoryDir = path.join(cwd, "memory");
+    if (!fs.existsSync(memoryDir)) {
+        fs.mkdirSync(memoryDir, { recursive: true });
+    }
+
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    const todayPath = path.join(memoryDir, `${formatDate(today)}.md`);
+    const yesterdayPath = path.join(memoryDir, `${formatDate(yesterday)}.md`);
+    const longTermPath = path.join(cwd, "MEMORY.md");
+
+    if (!fs.existsSync(todayPath)) fs.writeFileSync(todayPath, "", "utf-8");
+    if (!fs.existsSync(yesterdayPath)) fs.writeFileSync(yesterdayPath, "", "utf-8");
+    if (!fs.existsSync(longTermPath)) fs.writeFileSync(longTermPath, "", "utf-8");
+
+    return { todayPath, yesterdayPath, longTermPath };
+}
+
+// Load system prompt from markdown files
+function loadSystemPrompt(cwd: string): string {
+    // Check for bootstrap mode first
+    const bootstrapPath = path.join(cwd, "BOOTSTRAP.md");
+    if (fs.existsSync(bootstrapPath)) {
+        return fs.readFileSync(bootstrapPath, "utf-8");
+    }
+
+    // Normal mode: load identity files
+    const files = ["IDENTITY.md", "SOUL.md", "USER.md", "AGENTS.md"];
+    const parts: string[] = [];
+
+    for (const file of files) {
+        const filePath = path.join(cwd, file);
+        try {
+            if (fs.existsSync(filePath)) {
+                parts.push(fs.readFileSync(filePath, "utf-8"));
+            }
+        } catch { }
+    }
+
+    // Memory files (daily + long-term)
+    try {
+        const { todayPath, yesterdayPath, longTermPath } = ensureMemoryFiles(cwd);
+        if (fs.existsSync(todayPath)) parts.push(fs.readFileSync(todayPath, "utf-8"));
+        if (fs.existsSync(yesterdayPath)) parts.push(fs.readFileSync(yesterdayPath, "utf-8"));
+        if (fs.existsSync(longTermPath)) parts.push(fs.readFileSync(longTermPath, "utf-8"));
+    } catch { }
+
+    return parts.length > 0
+        ? parts.join("\n\n---\n\n")
+        : "You are OMO, a helpful AI coding assistant.";
 }
 
 // Extract accountId from JWT token
@@ -73,7 +138,7 @@ export function createAgent(config: AgentConfig) {
                 model,
                 store: false,
                 stream: true,
-                instructions: "You are OMO, a helpful AI coding assistant.",
+                instructions: loadSystemPrompt(cwd),
                 input: convertMessages(conversationHistory),
                 text: { verbosity: "medium" },
                 include: ["reasoning.encrypted_content"],
@@ -109,6 +174,7 @@ export function createAgent(config: AgentConfig) {
             let responseText = "";
             const pendingToolCalls: { id: string; name: string; args: string }[] = [];
             let done = false;
+            let hasPrintedLabel = false;
 
             while (!done) {
                 const { done: streamDone, value } = await reader.read();
@@ -130,6 +196,10 @@ export function createAgent(config: AgentConfig) {
 
                             // Handle different event types
                             if (event.type === "response.output_text.delta") {
+                                if (!hasPrintedLabel) {
+                                    process.stdout.write("Omo: ");
+                                    hasPrintedLabel = true;
+                                }
                                 process.stdout.write(event.delta || "");
                                 responseText += event.delta || "";
                             } else if (event.type === "response.function_call_arguments.delta") {
