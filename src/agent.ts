@@ -37,8 +37,10 @@ function ensureMemoryFiles(cwd: string) {
     const yesterdayPath = path.join(memoryDir, `${formatDate(yesterday)}.md`);
     const longTermPath = path.join(cwd, "MEMORY.md");
 
-    if (!fs.existsSync(todayPath)) fs.writeFileSync(todayPath, "", "utf-8");
-    if (!fs.existsSync(yesterdayPath)) fs.writeFileSync(yesterdayPath, "", "utf-8");
+    const dailyTemplate = (date: Date) => `# Daily Log - ${formatDate(date)}\n\n- **Summary**: \n- **Top Priorities**:\n  - [ ] \n  - [ ] \n- **Accomplishments**:\n  - \n- **Decisions Made**:\n  - \n- **Open Threads / Follow-ups**:\n  - \n- **Notes**:\n  - \n`;
+
+    if (!fs.existsSync(todayPath)) fs.writeFileSync(todayPath, dailyTemplate(today), "utf-8");
+    if (!fs.existsSync(yesterdayPath)) fs.writeFileSync(yesterdayPath, dailyTemplate(yesterday), "utf-8");
     if (!fs.existsSync(longTermPath)) fs.writeFileSync(longTermPath, "", "utf-8");
 
     return { todayPath, yesterdayPath, longTermPath };
