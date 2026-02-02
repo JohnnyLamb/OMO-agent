@@ -1,0 +1,18 @@
+{
+    "name": "omo-agent",
+    "version": "0.1.0",
+    "type": "module",
+    "scripts": {
+        "dev": "tsx src/index.ts"
+    },
+    "dependencies": {
+        "@anthropic-ai/sdk": "^0.52.0",
+        "dotenv": "^17.2.3",
+        "openai": "^6.17.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "tsx": "^4.19.0",
+        "typescript": "^5.7.0"
+    }
+}
