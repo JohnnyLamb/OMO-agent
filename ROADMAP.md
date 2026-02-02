@@ -40,3 +40,11 @@
 - [ ] Show thinking/reasoning content
 - [ ] Display token usage
 - [ ] Progress indicators for long operations
+
+
+
+Omo: A few setup wins we can do next, sir:
+
+- Capture current projects/goals in USER.md context
+- Add any tool details (paths, API keys, repos) to TOOLS.md if you keep one
+- Set a heartbeat checklist in HEARTBEAT.md (email/calendar checks, etc.)
