@@ -1,11 +1,16 @@
 import * as os from "os";
 import * as fs from "fs";
 import * as path from "path";
+import chalk from "chalk";
+import ora from "ora";
 import type { Tool } from "./types.js";
 
 const CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
 const JWT_CLAIM_PATH = "https://api.openai.com/auth";
 const DEFAULT_MODEL = "gpt-5.2-codex";
+
+const OMO_LABEL = chalk.blue.bold("Omo: ");
+
 
 export interface AgentConfig {
     apiKey: string;
@@ -158,105 +163,115 @@ export function createAgent(config: AgentConfig) {
             headers.set("accept", "text/event-stream");
             headers.set("content-type", "application/json");
 
-            const response = await fetch(CODEX_URL, {
-                method: "POST",
-                headers,
-                body: JSON.stringify(body),
-            });
+            const spinner = ora(chalk.dim("Thinking...")).start();
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`API Error ${response.status}: ${errorText}`);
-            }
+            try {
+                const response = await fetch(CODEX_URL, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify(body),
+                });
 
-            // Parse SSE stream
-            const reader = response.body!.getReader();
-            const decoder = new TextDecoder();
-            let buffer = "";
-            let responseText = "";
-            const pendingToolCalls: { id: string; name: string; args: string }[] = [];
-            let done = false;
-            let hasPrintedLabel = false;
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API Error ${response.status}: ${errorText}`);
+                }
 
-            while (!done) {
-                const { done: streamDone, value } = await reader.read();
-                if (streamDone) break;
+                // Parse SSE stream
+                const reader = response.body!.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+                let responseText = "";
+                const pendingToolCalls: { id: string; name: string; args: string }[] = [];
+                let done = false;
+                let hasPrintedLabel = false;
 
-                buffer += decoder.decode(value, { stream: true });
+                while (!done) {
+                    const { done: streamDone, value } = await reader.read();
+                    if (streamDone) break;
 
-                // Process complete SSE events
-                let idx = buffer.indexOf("\n\n");
-                while (idx !== -1) {
-                    const chunk = buffer.slice(0, idx);
-                    buffer = buffer.slice(idx + 2);
+                    // Stop spinner on first chunk of data
+                    if (spinner.isSpinning) spinner.stop();
 
-                    const dataLines = chunk.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim());
-                    for (const data of dataLines) {
-                        if (!data || data === "[DONE]") continue;
-                        try {
-                            const event = JSON.parse(data);
+                    buffer += decoder.decode(value, { stream: true });
 
-                            // Handle different event types
-                            if (event.type === "response.output_text.delta") {
-                                if (!hasPrintedLabel) {
-                                    process.stdout.write("Omo: ");
-                                    hasPrintedLabel = true;
-                                }
-                                process.stdout.write(event.delta || "");
-                                responseText += event.delta || "";
-                            } else if (event.type === "response.function_call_arguments.delta") {
-                                const idx = event.output_index ?? 0;
-                                if (!pendingToolCalls[idx]) {
-                                    pendingToolCalls[idx] = { id: "", name: "", args: "" };
-                                }
-                                pendingToolCalls[idx].args += event.delta || "";
-                            } else if (event.type === "response.output_item.added") {
-                                if (event.item?.type === "function_call") {
+                    // Process complete SSE events
+                    let idx = buffer.indexOf("\n\n");
+                    while (idx !== -1) {
+                        const chunk = buffer.slice(0, idx);
+                        buffer = buffer.slice(idx + 2);
+
+                        const dataLines = chunk.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim());
+                        for (const data of dataLines) {
+                            if (!data || data === "[DONE]") continue;
+                            try {
+                                const event = JSON.parse(data);
+
+                                // Handle different event types
+                                if (event.type === "response.output_text.delta") {
+                                    if (!hasPrintedLabel) {
+                                        process.stdout.write(OMO_LABEL);
+                                        hasPrintedLabel = true;
+                                    }
+                                    process.stdout.write(event.delta || "");
+                                    responseText += event.delta || "";
+                                } else if (event.type === "response.function_call_arguments.delta") {
                                     const idx = event.output_index ?? 0;
-                                    pendingToolCalls[idx] = {
-                                        id: event.item.call_id || event.item.id || `call_${idx}`,
-                                        name: event.item.name || "",
-                                        args: "",
-                                    };
+                                    if (!pendingToolCalls[idx]) {
+                                        pendingToolCalls[idx] = { id: "", name: "", args: "" };
+                                    }
+                                    pendingToolCalls[idx].args += event.delta || "";
+                                } else if (event.type === "response.output_item.added") {
+                                    if (event.item?.type === "function_call") {
+                                        const idx = event.output_index ?? 0;
+                                        pendingToolCalls[idx] = {
+                                            id: event.item.call_id || event.item.id || `call_${idx}`,
+                                            name: event.item.name || "",
+                                            args: "",
+                                        };
+                                    }
+                                } else if (event.type === "response.completed" || event.type === "response.done") {
+                                    done = true;
+                                } else if (event.type === "error") {
+                                    throw new Error(event.message || "API error");
                                 }
-                            } else if (event.type === "response.completed" || event.type === "response.done") {
-                                done = true;
-                            } else if (event.type === "error") {
-                                throw new Error(event.message || "API error");
+                            } catch (e) {
+                                if (e instanceof SyntaxError) continue;
+                                throw e;
                             }
-                        } catch (e) {
-                            if (e instanceof SyntaxError) continue;
-                            throw e;
                         }
+                        idx = buffer.indexOf("\n\n");
                     }
-                    idx = buffer.indexOf("\n\n");
                 }
-            }
 
-            // Filter out empty tool calls
-            const toolCalls = pendingToolCalls.filter((tc) => tc.name);
+                // Filter out empty tool calls
+                const toolCalls = pendingToolCalls.filter((tc) => tc.name);
 
-            // If no tool calls, we're done
-            if (toolCalls.length === 0) {
-                console.log("\n");
-                conversationHistory.push({ role: "assistant", content: responseText });
-                return;
-            }
-
-            // Execute tools and add results
-            conversationHistory.push({ role: "assistant", content: responseText || "(tool call)" });
-
-            for (const tc of toolCalls) {
-                console.log(`\n[Tool: ${tc.name}]`);
-                try {
-                    const input = JSON.parse(tc.args || "{}");
-                    const result = await executeTool(tc.name, input);
-                    console.log(`[Result: ${result.slice(0, 100)}${result.length > 100 ? "..." : ""}]`);
-                    conversationHistory.push({ role: "user", content: `Tool "${tc.name}" returned: ${result}` });
-                } catch (e) {
-                    console.log(`[Error: ${e}]`);
-                    conversationHistory.push({ role: "user", content: `Tool "${tc.name}" error: ${e}` });
+                // If no tool calls, we're done
+                if (toolCalls.length === 0) {
+                    console.log("\n");
+                    conversationHistory.push({ role: "assistant", content: responseText });
+                    return;
                 }
+
+                // Execute tools and add results
+                conversationHistory.push({ role: "assistant", content: responseText || "(tool call)" });
+
+                for (const tc of toolCalls) {
+                    console.log(chalk.gray(`\n[Tool: ${tc.name}]`));
+                    try {
+                        const input = JSON.parse(tc.args || "{}");
+                        const result = await executeTool(tc.name, input);
+                        console.log(chalk.gray(`[Result: ${result.slice(0, 100)}${result.length > 100 ? "..." : ""}]`));
+                        conversationHistory.push({ role: "user", content: `Tool "${tc.name}" returned: ${result}` });
+                    } catch (e) {
+                        console.log(chalk.red(`[Error: ${e}]`));
+                        conversationHistory.push({ role: "user", content: `Tool "${tc.name}" error: ${e}` });
+                    }
+                }
+
+            } finally {
+                if (spinner.isSpinning) spinner.stop();
             }
         }
     }

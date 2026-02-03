@@ -5,7 +5,9 @@ import * as http from "http";
 import * as crypto from "crypto";
 import { generatePKCE } from "./pkce.js";
 
-const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+import "dotenv/config";
+
+const CLIENT_ID = process.env.CLIENT_ID || "app_EMoamEEZ73f0CkXaXp7hrann";
 const AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize";
 const TOKEN_URL = "https://auth.openai.com/oauth/token";
 const REDIRECT_URI = "http://localhost:1455/auth/callback";
