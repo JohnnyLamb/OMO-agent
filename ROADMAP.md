@@ -41,10 +41,54 @@
 - [ ] Display token usage
 - [ ] Progress indicators for long operations
 
+---
 
+## Learning / Education
 
-Omo: A few setup wins we can do next, sir:
+### Materials
+- [ ] System Design School – <https://systemdesignschool.io>
+- [ ] Roadmap.sh Projects – <https://roadmap.sh/projects>
+- [ ] Book: *Computer Systems: A Programmer's Perspective*
+- [ ] Book: *Designing Data-Intensive Applications*
+- [ ] Product School: PMC material (to blog)
+- [ ] Product School: AI PMC material (to blog)
 
-- Capture current projects/goals in USER.md context
-- Add any tool details (paths, API keys, repos) to TOOLS.md if you keep one
-- Set a heartbeat checklist in HEARTBEAT.md (email/calendar checks, etc.)
+### Publishing Plan
+- [ ] Add all learning materials above to GitHub repo
+- [ ] Publish all learning materials above to blog
+
+### GitHub Repo Structure (proposed)
+```
+learning/
+  system-design-school/
+    notes/
+    projects/
+    summaries.md
+  roadmap-sh/
+    project-1/
+    project-2/
+  books/
+    csapp/
+      chapter-notes/
+      exercises/
+    ddia/
+      chapter-notes/
+      summaries.md
+```
+
+### Blog Structure (proposed)
+- Categories:
+  - System Design School
+  - Roadmap.sh Projects
+  - Book Notes (CSAPP, DDIA)
+  - Product School PMC / AI PMC
+- Post types:
+  - Weekly Digest
+  - Deep Dives
+  - Project Write-ups
+
+### Cadence (proposed)
+- Mon/Wed/Fri: Notes + GitHub commits
+- Saturday: Blog summary / publish 1 post
+- Monthly: "What I learned this month"
+

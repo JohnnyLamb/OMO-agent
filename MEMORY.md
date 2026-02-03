@@ -22,5 +22,3 @@
   - Creates `MEMORY.md` if missing
   - Loads daily + long-term memory into system prompt
 
-## Open Threads
-- Awaiting short-term memory template from J.
