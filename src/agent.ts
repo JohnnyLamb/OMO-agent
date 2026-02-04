@@ -1,16 +1,12 @@
 import * as os from "os";
 import * as fs from "fs";
 import * as path from "path";
-import chalk from "chalk";
-import ora from "ora";
+import { EventEmitter } from "events";
 import type { Tool } from "./types.js";
 
 const CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
 const JWT_CLAIM_PATH = "https://api.openai.com/auth";
 const DEFAULT_MODEL = "gpt-5.2-codex";
-
-const OMO_LABEL = chalk.blue.bold("Omo: ");
-
 
 export interface AgentConfig {
     apiKey: string;
@@ -18,6 +14,15 @@ export interface AgentConfig {
     model?: string;
     tools?: Tool[];
     cwd?: string;
+}
+
+// Event types for type-safe event handling
+export interface AgentEvents {
+    thinking: { status: boolean };
+    token: { text: string };
+    tool_start: { name: string; args: Record<string, unknown> };
+    tool_end: { name: string; result: string; error?: string };
+    response_end: { fullText: string };
 }
 
 // Format date as YYYY-MM-DD
@@ -122,13 +127,20 @@ function convertMessages(messages: { role: string; content: string }[]) {
     }));
 }
 
-export function createAgent(config: AgentConfig) {
+export interface Agent extends EventEmitter {
+    chat(userMessage: string): Promise<void>;
+    on<K extends keyof AgentEvents>(event: K, listener: (payload: AgentEvents[K]) => void): this;
+    emit<K extends keyof AgentEvents>(event: K, payload: AgentEvents[K]): boolean;
+}
+
+export function createAgent(config: AgentConfig): Agent {
     const apiKey = config.apiKey;
     const accountId = config.accountId ?? extractAccountId(apiKey);
     const model = config.model ?? DEFAULT_MODEL;
     const tools = config.tools ?? [];
     const cwd = config.cwd ?? process.cwd();
 
+    const emitter = new EventEmitter() as Agent;
     const conversationHistory: { role: string; content: string }[] = [];
 
     async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
@@ -163,7 +175,8 @@ export function createAgent(config: AgentConfig) {
             headers.set("accept", "text/event-stream");
             headers.set("content-type", "application/json");
 
-            const spinner = ora(chalk.dim("Thinking...")).start();
+            // Emit thinking started
+            emitter.emit("thinking", { status: true });
 
             try {
                 const response = await fetch(CODEX_URL, {
@@ -184,14 +197,16 @@ export function createAgent(config: AgentConfig) {
                 let responseText = "";
                 const pendingToolCalls: { id: string; name: string; args: string }[] = [];
                 let done = false;
-                let hasPrintedLabel = false;
+                let hasEmittedFirstToken = false;
 
                 while (!done) {
                     const { done: streamDone, value } = await reader.read();
                     if (streamDone) break;
 
-                    // Stop spinner on first chunk of data
-                    if (spinner.isSpinning) spinner.stop();
+                    // Stop "thinking" on first chunk of data
+                    if (!hasEmittedFirstToken) {
+                        emitter.emit("thinking", { status: false });
+                    }
 
                     buffer += decoder.decode(value, { stream: true });
 
@@ -209,11 +224,8 @@ export function createAgent(config: AgentConfig) {
 
                                 // Handle different event types
                                 if (event.type === "response.output_text.delta") {
-                                    if (!hasPrintedLabel) {
-                                        process.stdout.write(OMO_LABEL);
-                                        hasPrintedLabel = true;
-                                    }
-                                    process.stdout.write(event.delta || "");
+                                    hasEmittedFirstToken = true;
+                                    emitter.emit("token", { text: event.delta || "" });
                                     responseText += event.delta || "";
                                 } else if (event.type === "response.function_call_arguments.delta") {
                                     const idx = event.output_index ?? 0;
@@ -249,7 +261,7 @@ export function createAgent(config: AgentConfig) {
 
                 // If no tool calls, we're done
                 if (toolCalls.length === 0) {
-                    console.log("\n");
+                    emitter.emit("response_end", { fullText: responseText });
                     conversationHistory.push({ role: "assistant", content: responseText });
                     return;
                 }
@@ -258,23 +270,26 @@ export function createAgent(config: AgentConfig) {
                 conversationHistory.push({ role: "assistant", content: responseText || "(tool call)" });
 
                 for (const tc of toolCalls) {
-                    console.log(chalk.gray(`\n[Tool: ${tc.name}]`));
                     try {
                         const input = JSON.parse(tc.args || "{}");
+                        emitter.emit("tool_start", { name: tc.name, args: input });
                         const result = await executeTool(tc.name, input);
-                        console.log(chalk.gray(`[Result: ${result.slice(0, 100)}${result.length > 100 ? "..." : ""}]`));
+                        emitter.emit("tool_end", { name: tc.name, result });
                         conversationHistory.push({ role: "user", content: `Tool "${tc.name}" returned: ${result}` });
                     } catch (e) {
-                        console.log(chalk.red(`[Error: ${e}]`));
+                        const errorMsg = e instanceof Error ? e.message : String(e);
+                        emitter.emit("tool_end", { name: tc.name, result: "", error: errorMsg });
                         conversationHistory.push({ role: "user", content: `Tool "${tc.name}" error: ${e}` });
                     }
                 }
 
             } finally {
-                if (spinner.isSpinning) spinner.stop();
+                // Ensure thinking is stopped if something goes wrong
+                emitter.emit("thinking", { status: false });
             }
         }
     }
 
-    return { chat };
+    emitter.chat = chat;
+    return emitter;
 }
