@@ -1,7 +1,27 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  webpack: (config) => {
+    // Resolve @agent/* to parent src directory
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "@agent": path.resolve(__dirname, "../src"),
+    };
+    // Handle .js extension imports resolving to .ts files (ESM-style imports)
+    config.resolve.extensionAlias = {
+      ...config.resolve.extensionAlias,
+      ".js": [".ts", ".tsx", ".js", ".jsx"],
+    };
+    return config;
+  },
+  // Turbopack config for dev mode
+  turbopack: {
+    resolveAlias: {
+      "@agent": path.resolve(__dirname, "../src"),
+    },
+    resolveExtensions: [".ts", ".tsx", ".js", ".jsx", ".json"],
+  },
 };
 
 export default nextConfig;

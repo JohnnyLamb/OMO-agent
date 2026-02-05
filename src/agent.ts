@@ -14,6 +14,8 @@ export interface AgentConfig {
     model?: string;
     tools?: Tool[];
     cwd?: string;
+    /** Pre-loaded system prompt (for cloud mode - skips filesystem loading) */
+    systemPrompt?: string;
 }
 
 // Event types for type-safe event handling
@@ -207,7 +209,7 @@ function convertMessages(messages: { role: string; content: string }[]) {
 }
 
 export interface Agent extends EventEmitter {
-    chat(userMessage: string): Promise<void>;
+    chat(userMessage: string, history?: { role: string; content: string }[]): Promise<void>;
     on<K extends keyof AgentEvents>(event: K, listener: (payload: AgentEvents[K]) => void): this;
     emit<K extends keyof AgentEvents>(event: K, payload: AgentEvents[K]): boolean;
 }
@@ -218,6 +220,7 @@ export function createAgent(config: AgentConfig): Agent {
     const model = config.model ?? DEFAULT_MODEL;
     const tools = config.tools ?? [];
     const cwd = config.cwd ?? process.cwd();
+    const preloadedSystemPrompt = config.systemPrompt;
 
     const emitter = new EventEmitter() as Agent;
     const conversationHistory: { role: string; content: string }[] = [];
@@ -228,14 +231,20 @@ export function createAgent(config: AgentConfig): Agent {
         return tool.execute({ ...input, _cwd: cwd });
     }
 
-    async function chat(userMessage: string): Promise<void> {
-        conversationHistory.push({ role: "user", content: userMessage });
+    async function chat(userMessage: string, history?: { role: string; content: string }[]): Promise<void> {
+        // Use provided history for stateless web requests, or internal history for CLI
+        const activeHistory = history ? [...history, { role: "user", content: userMessage }] : conversationHistory;
+        if (!history) {
+            conversationHistory.push({ role: "user", content: userMessage });
+        }
 
         let forceUserReply = false;
         let emptyResponseRetries = 0;
 
         while (true) {
-            const instructions = loadSystemPrompt(cwd) + (forceUserReply
+            // Use preloaded prompt for cloud mode, or load from filesystem for CLI
+            const basePrompt = preloadedSystemPrompt ?? loadSystemPrompt(cwd);
+            const instructions = basePrompt + (forceUserReply
                 ? "\n\nIMPORTANT: You have tool results. Respond to the user now with a concise reply."
                 : "");
 
@@ -244,7 +253,7 @@ export function createAgent(config: AgentConfig): Agent {
                 store: false,
                 stream: true,
                 instructions,
-                input: convertMessages(conversationHistory),
+                input: convertMessages(activeHistory),
                 text: { verbosity: "medium" },
                 include: ["reasoning.encrypted_content"],
                 tool_choice: "auto",
@@ -348,12 +357,18 @@ export function createAgent(config: AgentConfig): Agent {
                 // If no tool calls, we're done
                 if (toolCalls.length === 0) {
                     emitter.emit("response_end", { fullText: responseText });
-                    conversationHistory.push({ role: "assistant", content: responseText });
+                    activeHistory.push({ role: "assistant", content: responseText });
+                    if (!history) {
+                        conversationHistory.push({ role: "assistant", content: responseText });
+                    }
                     return;
                 }
 
                 // Execute tools and add results
-                conversationHistory.push({ role: "assistant", content: responseText || "(tool call)" });
+                activeHistory.push({ role: "assistant", content: responseText || "(tool call)" });
+                if (!history) {
+                    conversationHistory.push({ role: "assistant", content: responseText || "(tool call)" });
+                }
 
                 for (const tc of toolCalls) {
                     try {
@@ -361,11 +376,17 @@ export function createAgent(config: AgentConfig): Agent {
                         emitter.emit("tool_start", { name: tc.name, args: input });
                         const result = await executeTool(tc.name, input);
                         emitter.emit("tool_end", { name: tc.name, result });
-                        conversationHistory.push({ role: "user", content: `Tool "${tc.name}" returned: ${result}` });
+                        activeHistory.push({ role: "user", content: `Tool "${tc.name}" returned: ${result}` });
+                        if (!history) {
+                            conversationHistory.push({ role: "user", content: `Tool "${tc.name}" returned: ${result}` });
+                        }
                     } catch (e) {
                         const errorMsg = e instanceof Error ? e.message : String(e);
                         emitter.emit("tool_end", { name: tc.name, result: "", error: errorMsg });
-                        conversationHistory.push({ role: "user", content: `Tool "${tc.name}" error: ${e}` });
+                        activeHistory.push({ role: "user", content: `Tool "${tc.name}" error: ${e}` });
+                        if (!history) {
+                            conversationHistory.push({ role: "user", content: `Tool "${tc.name}" error: ${e}` });
+                        }
                     }
                 }
 
