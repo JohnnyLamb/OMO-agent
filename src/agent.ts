@@ -33,6 +33,65 @@ function formatDate(d: Date): string {
     return `${year}-${month}-${day}`;
 }
 
+function parseUncheckedOpenThreads(content: string): string[] {
+    const lines = content.split(/\r?\n/);
+    const startIdx = lines.findIndex((line) => line.trim().startsWith("- **Open Threads / Follow-ups**:"));
+    if (startIdx === -1) return [];
+
+    const items: string[] = [];
+    for (let i = startIdx + 1; i < lines.length; i += 1) {
+        const line = lines[i];
+        if (line.trim().startsWith("- **")) break;
+        const match = line.match(/-\s*\[\s*\]\s*(.+)/);
+        if (match && match[1]) items.push(match[1].trim());
+    }
+    return items;
+}
+
+function appendCarryoverOpenThreads(todayPath: string, memoryDir: string, daysBack = 7) {
+    if (!fs.existsSync(todayPath)) return;
+
+    const todayContent = fs.readFileSync(todayPath, "utf-8");
+    const existingItems = new Set(parseUncheckedOpenThreads(todayContent));
+
+    const today = new Date();
+    const carryoverItems: string[] = [];
+
+    for (let i = 1; i <= daysBack; i += 1) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const pathToCheck = path.join(memoryDir, `${formatDate(d)}.md`);
+        if (!fs.existsSync(pathToCheck)) continue;
+        const content = fs.readFileSync(pathToCheck, "utf-8");
+        const items = parseUncheckedOpenThreads(content);
+        for (const item of items) {
+            if (!existingItems.has(item)) {
+                existingItems.add(item);
+                carryoverItems.push(item);
+            }
+        }
+    }
+
+    if (carryoverItems.length === 0) return;
+
+    const lines = todayContent.split(/\r?\n/);
+    const startIdx = lines.findIndex((line) => line.trim().startsWith("- **Open Threads / Follow-ups**:"));
+
+    const formatted = carryoverItems.map((item) => `  - [ ] ${item}`);
+
+    if (startIdx === -1) {
+        lines.push("", "- **Open Threads / Follow-ups**:", ...formatted);
+    } else {
+        let insertIdx = startIdx + 1;
+        while (insertIdx < lines.length && !lines[insertIdx].trim().startsWith("- **")) {
+            insertIdx += 1;
+        }
+        lines.splice(insertIdx, 0, ...formatted);
+    }
+
+    fs.writeFileSync(todayPath, `${lines.join("\n").replace(/\n+$/g, "")}\n`, "utf-8");
+}
+
 function ensureMemoryFiles(cwd: string) {
     const memoryDir = path.join(cwd, "memory");
     if (!fs.existsSync(memoryDir)) {
@@ -52,6 +111,8 @@ function ensureMemoryFiles(cwd: string) {
     if (!fs.existsSync(todayPath)) fs.writeFileSync(todayPath, dailyTemplate(today), "utf-8");
     if (!fs.existsSync(yesterdayPath)) fs.writeFileSync(yesterdayPath, dailyTemplate(yesterday), "utf-8");
     if (!fs.existsSync(longTermPath)) fs.writeFileSync(longTermPath, "", "utf-8");
+
+    appendCarryoverOpenThreads(todayPath, memoryDir, 7);
 
     return { todayPath, yesterdayPath, longTermPath };
 }
@@ -79,9 +140,27 @@ function loadSystemPrompt(cwd: string): string {
 
     // Memory files (daily + long-term)
     try {
-        const { todayPath, yesterdayPath, longTermPath } = ensureMemoryFiles(cwd);
-        if (fs.existsSync(todayPath)) parts.push(fs.readFileSync(todayPath, "utf-8"));
-        if (fs.existsSync(yesterdayPath)) parts.push(fs.readFileSync(yesterdayPath, "utf-8"));
+        const { longTermPath } = ensureMemoryFiles(cwd);
+        const memoryDir = path.join(cwd, "memory");
+
+        // Read the single most recent log by modification time
+        if (fs.existsSync(memoryDir)) {
+            const dailyFiles = fs.readdirSync(memoryDir)
+                .filter((f) => /^\d{4}-\d{2}-\d{2}\.md$/.test(f))
+                .map((f) => {
+                    const p = path.join(memoryDir, f);
+                    const stat = fs.statSync(p);
+                    return { path: p, mtime: stat.mtimeMs, size: stat.size };
+                })
+                // Filter out empty template files (193 bytes or less)
+                .filter((f) => f.size > 200)
+                .sort((a, b) => b.mtime - a.mtime);
+
+            // Load the most recent non-empty log
+            if (dailyFiles.length > 0) {
+                parts.push(fs.readFileSync(dailyFiles[0].path, "utf-8"));
+            }
+        }
         if (fs.existsSync(longTermPath)) parts.push(fs.readFileSync(longTermPath, "utf-8"));
     } catch { }
 
@@ -152,12 +231,19 @@ export function createAgent(config: AgentConfig): Agent {
     async function chat(userMessage: string): Promise<void> {
         conversationHistory.push({ role: "user", content: userMessage });
 
+        let forceUserReply = false;
+        let emptyResponseRetries = 0;
+
         while (true) {
+            const instructions = loadSystemPrompt(cwd) + (forceUserReply
+                ? "\n\nIMPORTANT: You have tool results. Respond to the user now with a concise reply."
+                : "");
+
             const body = {
                 model,
                 store: false,
                 stream: true,
-                instructions: loadSystemPrompt(cwd),
+                instructions,
                 input: convertMessages(conversationHistory),
                 text: { verbosity: "medium" },
                 include: ["reasoning.encrypted_content"],

@@ -18,9 +18,9 @@ Before doing anything else:
 
 1. Read `SOUL.md` — this is who you are
 2. Read `USER.md` — this is who you're helping
-3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
+3. Read the **most recent daily log with actual content** from `memory/` (check modification time, skip empty templates). This may be today's, yesterday's, or older if no recent entries exist.
 4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
-5. After reading the logs, **briefly remind J** of relevant ongoing threads or open items from previous logs.
+5. After reading the logs, **briefly remind J** of relevant ongoing threads or open items from the log you read.
 
 Don't ask permission. Just do it.
 
@@ -43,7 +43,7 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 - This is your curated memory — the distilled essence, not raw logs
 - Over time, review your daily files and update MEMORY.md with what's worth keeping
 
-### 📝 Write It Down - No "Mental Notes"!
+### 📝 Write It Down - No "Mental Notes"
 
 - **Memory is limited** — if you want to remember something, WRITE IT TO A FILE
 - "Mental notes" don't survive session restarts. Files do.
@@ -81,7 +81,7 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 
 You have access to your human's stuff. That doesn't mean you _share_ their stuff. In groups, you're a participant — not their voice, not their proxy. Think before you speak.
 
-### 💬 Know When to Speak!
+### 💬 Know When to Speak
 
 In group chats where you receive every message, be **smart about when to contribute**:
 
@@ -107,7 +107,7 @@ In group chats where you receive every message, be **smart about when to contrib
 
 Participate, don't dominate.
 
-### 😊 React Like a Human!
+### 😊 React Like a Human
 
 On platforms that support reactions (Discord, Slack), use emoji reactions naturally:
 
@@ -136,7 +136,7 @@ Skills provide your tools. When you need one, check its `SKILL.md`. Keep local n
 - **Discord links:** Wrap multiple links in `<>` to suppress embeds: `<https://example.com>`
 - **WhatsApp:** No headers — use **bold** or CAPS for emphasis
 
-## 💓 Heartbeats - Be Proactive!
+## 💓 Heartbeats - Be Proactive
 
 When you receive a heartbeat poll (message matches the configured heartbeat prompt), don't just reply `HEARTBEAT_OK` every time. Use heartbeats productively!
 
