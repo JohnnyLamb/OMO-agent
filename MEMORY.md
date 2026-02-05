@@ -14,6 +14,7 @@
 ## System Architecture / Workspace Protocols
 - Memory system uses daily files in `memory/YYYY-MM-DD.md` and curated long-term memory in `MEMORY.md`.
 - In main session, load: SOUL.md, USER.md, AGENTS.md, daily memory (today + yesterday), and MEMORY.md.
+- Blog publishing (myblog): create post in `myblog/src/posts/YYYY-MM-DD-slug.md` with frontmatter (title/date/layout), run `npm run build` (generates `docs/`), then `git add docs src/posts/...`, `git commit -m "Add post: <Title>"`, `git push`.
 
 ## Notable Decisions & Changes
 - 2026-02-01: Implemented automatic memory file bootstrapping + loading in `src/agent.ts`:
