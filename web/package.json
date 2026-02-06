@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack --port 1455",
-    "build": "next build --webpack",
+    "prebuild": "node prebuild.js",
+    "dev": "node prebuild.js && next dev --webpack --port 1455",
+    "build": "node prebuild.js && next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },

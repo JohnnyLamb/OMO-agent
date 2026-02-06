@@ -3,10 +3,10 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   webpack: (config) => {
-    // Resolve @agent/* to parent src directory
+    // Resolve @agent/* to _shared directory (copied from parent src)
     config.resolve.alias = {
       ...config.resolve.alias,
-      "@agent": path.resolve(__dirname, "../src"),
+      "@agent": path.resolve(__dirname, "src/_shared"),
     };
     // Handle .js extension imports resolving to .ts files (ESM-style imports)
     config.resolve.extensionAlias = {
@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
   // Turbopack config for dev mode
   turbopack: {
     resolveAlias: {
-      "@agent": path.resolve(__dirname, "../src"),
+      "@agent": path.resolve(__dirname, "src/_shared"),
     },
     resolveExtensions: [".ts", ".tsx", ".js", ".jsx", ".json"],
   },
